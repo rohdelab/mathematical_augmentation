@@ -30,6 +30,7 @@ parser.add_argument('--epochs', default=50, type=int)
 parser.add_argument('--model', default='shallowcnn', type=str, choices=['vgg11', 'shallowcnn', 'resnet18'])
 parser.add_argument('--plot', action='store_true')
 parser.add_argument('--naug', default=1, type=int)
+parser.add_argument('--flops', action='store_true')
 args = parser.parse_args()
 
 #if args.dataset == 'MNIST':
@@ -42,6 +43,9 @@ torch.manual_seed(0)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = True
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
+if args.flops:
+    device = 'cpu'
+    from pypapi import events, papi_high as high
 
 if __name__ == '__main__':
     (x_train, y_train), (x_test, y_test) = load_data_3D(args.dataset, num_classes)
@@ -58,6 +62,17 @@ if __name__ == '__main__':
     if args.model == 'resnet18':
         model = models.resnet18(num_classes=num_classes).to(device)
     torch.save(model.state_dict(), './model_init.pth')
+
+    if args.flops:
+        model = model.double()
+        model.eval()
+        with torch.no_grad():
+            high.start_counters([events.PAPI_DP_OPS,])
+            x_test_batch = torch.rand(1, 3, img_size, img_size, dtype=torch.float64)
+            test_logit = model(x_test_batch)
+            test_gflops =high.stop_counters()[0] / 1e9
+            print('test gflops: {}'.format(test_gflops))
+        model.train()
 
     accs = []
     all_preds = []
