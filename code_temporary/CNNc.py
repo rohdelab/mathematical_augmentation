@@ -57,7 +57,10 @@ if __name__ == '__main__':
         model = MNISTNet(3, num_classes, 2*(img_size+15)).to(device)
     if args.model == 'resnet18':
         model = models.resnet18(num_classes=num_classes).to(device)
-    torch.save(model.state_dict(), './model_init.pth')
+    save_path = 'results-new-validation/{}/model-{}-augn{}/'.format(args.dataset, type(model).__name__, args.naug)
+    Path(save_path).mkdir(parents=True, exist_ok=True)
+    model_init_path = os.path.join(save_path, './model_init.pth')
+    torch.save(model.state_dict(), model_init_path)
 
     accs = []
     all_preds = []
@@ -66,7 +69,7 @@ if __name__ == '__main__':
     for n_samples_perclass in po_train: # [2**i for i in range(0, po_train_max+1)]:
     # for n_samples_perclass in [512]:
         for repeat in range(num_repeats):
-            model.load_state_dict(torch.load('./model_init.pth'))
+            model.load_state_dict(torch.load(model_init_path))
             (x_train_sub_beforeAug, y_train_sub_beforeAug), (x_valbeforePad, y_valbeforePad) = take_train_val_samples(x_train, y_train, n_samples_perclass, num_classes, repeat)
             
             x_train_sub_beforeAugReshape = rearrange(x_train_sub_beforeAug, 'b c w h -> b w h c') 
@@ -100,7 +103,7 @@ if __name__ == '__main__':
             criterion = nn.CrossEntropyLoss()
             optimizer = optim.Adam(model.parameters(), lr=5e-4)
 
-            save_path = 'results-new-validation/{}/samples-{}-model-{}/'.format(args.dataset, n_samples_perclass, type(model).__name__)
+            save_path = 'results-new-validation/{}/samples-{}-model-{}-augn{}/'.format(args.dataset, n_samples_perclass, type(model).__name__, AUG_N)
             Path(save_path).mkdir(parents=True, exist_ok=True)
             ckpt_path = os.path.join(save_path, 'repeat{}.pkl'.format(repeat))
             best_val_acc = 0.0
