@@ -142,6 +142,74 @@ def take_affine_tform_augV2(xAffT, yAffT,img_size,ards,N_aug):
 
     return xAffTAug, yAffTAug
 
+def take_affine_tform_augV2trad(xAffT, yAffT,img_size,ards,N_aug):
+    # xAffT: data to be aug --> shape ()
+    # yAffT: label to be aug --> shape ()
+    # N_aug: number of aug --> int
+    
+        
+    xAffTAug = []
+    yAffTAug = []
+    for eachAug in range(N_aug):
+        for eachX, eachY in zip(xAffT, yAffT):
+            
+            
+            if ards=='SYNTH':
+                sx=np.random.uniform(0.5,2.0)
+                sy=np.random.uniform(0.5,2.0)
+                tx=np.random.uniform(-15,15)
+                ty=np.random.uniform(-15,15)
+                sh_ang=np.random.uniform(-np.pi/5,np.pi/5)
+                rot_ang=np.random.uniform(-40,40)
+            elif ards=='AFFNISTb_out':
+                sx=np.random.uniform(0.8,1.2)
+                sy=np.random.uniform(0.8,1.2)
+                tx=np.random.uniform(-5,5)
+                ty=np.random.uniform(-5,5)
+                sh_ang=np.random.uniform(-np.pi/20,np.pi/20)
+                rot_ang=np.random.uniform(-10,10)
+            else:
+                sx=np.random.uniform(0.5,2.0)
+                sy=np.random.uniform(0.5,2.0)
+                tx=np.random.uniform(-15,15)
+                ty=np.random.uniform(-15,15)
+                sh_ang=np.random.uniform(-np.pi/10,np.pi/10)
+                rot_ang=np.random.uniform(-20,20)
+            
+            
+            eachXPadTform=eachX+1
+            
+            szs=2*int(np.round(img_size/2))
+
+            #eachXPadTform = np.pad(eachXPadTform, ((0,szs),(0,szs)), 'constant',constant_values=-1)
+            eachXPadTform = np.pad(eachXPadTform, ((0,szs),(0,szs)), 'constant')
+            
+            tform_s = transform.AffineTransform(scale=(sx, sy), shear=sh_ang)
+            eachXPadTform = transform.warp(eachXPadTform, tform_s.inverse)  
+            
+            cent=szs
+            cy1=sx*cent/2; cx1=sy*cent/2;
+            
+            tform_t1 = transform.AffineTransform(translation=(cent-cy1, cent-cx1)) 
+            eachXPadTform = transform.warp(eachXPadTform, tform_t1.inverse) 
+            
+            eachXPadTform = transform.rotate(eachXPadTform,rot_ang)
+            
+            #eachXPadTform = np.pad(eachXPadTform, ((15,15),(15,15)), 'constant',constant_values=-1)
+            eachXPadTform = np.pad(eachXPadTform, ((15,15),(15,15)), 'constant')
+            
+            tform_t = transform.AffineTransform(translation=(tx, ty)) 
+            eachXPadTform = transform.warp(eachXPadTform, tform_t.inverse)  
+            eachXPadTform=eachXPadTform-1
+
+            xAffTAug.append(eachXPadTform)
+            yAffTAug.append(eachY)
+
+    xAffTAug = np.asarray(xAffTAug)
+    yAffTAug = np.asarray(yAffTAug) 
+
+    return xAffTAug, yAffTAug
+
 def new_index_matrix(max_index, n_samples_perclass, num_classes, repeat, y_train):
     seed = int('{}{}{}'.format(n_samples_perclass, num_classes, repeat))
     np.random.seed(seed)
