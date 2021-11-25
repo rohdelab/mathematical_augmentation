@@ -76,7 +76,7 @@ if __name__ == '__main__':
 
     accs = []
     all_preds = []
-    num_repeats = 10
+    num_repeats = 1
     AUG_N = args.naug
     for n_samples_perclass in [2**i for i in range(0, po_train_max+1)]:
     # for n_samples_perclass in [512]:
