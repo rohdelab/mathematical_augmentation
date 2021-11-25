@@ -180,7 +180,7 @@ if __name__ == '__main__':
             rcdt_gflops = (x / 1e9) / n_samples
         print('rcdt_gflops: {}'.format(rcdt_gflops))
 
-    num_repeats = 10
+    num_repeats = 1
     accs = []
     all_preds = []
 
