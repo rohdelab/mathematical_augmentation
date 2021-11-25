@@ -46,6 +46,9 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 if args.flops:
     device = 'cpu'
     from pypapi import events, papi_high as high
+    num_repeats = 1
+else:
+    num_repeats = 10
 
 if __name__ == '__main__':
     (x_train, y_train), (x_test, y_test) = load_data_3D(args.dataset, num_classes)
@@ -76,7 +79,7 @@ if __name__ == '__main__':
 
     accs = []
     all_preds = []
-    num_repeats = 1
+    
     AUG_N = args.naug
     for n_samples_perclass in [2**i for i in range(0, po_train_max+1)]:
     # for n_samples_perclass in [512]:
