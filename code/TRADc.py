@@ -143,7 +143,7 @@ if __name__ == '__main__':
                 f.create_dataset('y_test', data=y_test)
                 print('saved to {}'.format(cache_file))
 
-    num_repeats = 10
+    num_repeats = 1
     accs = []
     all_preds = []
     AUG_N = args.naug
