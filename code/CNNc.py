@@ -43,12 +43,11 @@ torch.manual_seed(0)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = True
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
+num_repeats = 10
 if args.flops:
     device = 'cpu'
     from pypapi import events, papi_high as high
     num_repeats = 1
-else:
-    num_repeats = 10
 
 if __name__ == '__main__':
     (x_train, y_train), (x_test, y_test) = load_data_3D(args.dataset, num_classes)
@@ -64,7 +63,12 @@ if __name__ == '__main__':
         model = MNISTNet(3, num_classes, 2*(img_size+15)).to(device)
     if args.model == 'resnet18':
         model = models.resnet18(num_classes=num_classes).to(device)
-    torch.save(model.state_dict(), './model_init.pth')
+
+
+    save_path = 'results-new-validation/{}/model-{}-augn{}/'.format(args.dataset, type(model).__name__, args.naug)
+    Path(save_path).mkdir(parents=True, exist_ok=True)
+    model_init_path = os.path.join(save_path, './model_init.pth')
+    torch.save(model.state_dict(), model_init_path)
 
     if args.flops:
         model = model.double()
@@ -73,20 +77,23 @@ if __name__ == '__main__':
             high.start_counters([events.PAPI_DP_OPS,])
             x_test_batch = torch.rand(1, 3, img_size, img_size, dtype=torch.float64)
             test_logit = model(x_test_batch)
-            test_gflops =high.stop_counters()[0] / 1e9
+            test_gflops = high.stop_counters()[0] / 1e9
             print('test gflops: {}'.format(test_gflops))
         model.train()
 
     accs = []
     all_preds = []
     
+    all_train_gflops = []
     AUG_N = args.naug
     for n_samples_perclass in [2**i for i in range(0, po_train_max+1)]:
     # for n_samples_perclass in [512]:
         for repeat in range(num_repeats):
-            model.load_state_dict(torch.load('./model_init.pth'))
+            model.load_state_dict(torch.load(model_init_path))
             (x_train_sub_beforeAug, y_train_sub_beforeAug), (x_valbeforePad, y_valbeforePad) = take_train_val_samples(x_train, y_train, n_samples_perclass, num_classes, repeat)
             
+            if args.flops:
+                high.start_counters([events.PAPI_DP_OPS,])
 
             x_train_sub_beforeAugReshape = rearrange(x_train_sub_beforeAug, 'b c w h -> b w h c') 
             np.random.seed(seed=None)
@@ -119,7 +126,7 @@ if __name__ == '__main__':
             criterion = nn.CrossEntropyLoss()
             optimizer = optim.Adam(model.parameters(), lr=5e-4)
 
-            save_path = 'results-new-validation/{}/samples-{}-model-{}/'.format(args.dataset, n_samples_perclass, type(model).__name__)
+            save_path = 'results-new-validation/{}/samples-{}-model-{}-augn{}/'.format(args.dataset, n_samples_perclass, type(model).__name__, AUG_N)
             Path(save_path).mkdir(parents=True, exist_ok=True)
             ckpt_path = os.path.join(save_path, 'repeat{}.pkl'.format(repeat))
             best_val_acc = 0.0
@@ -151,7 +158,10 @@ if __name__ == '__main__':
                     #     break
 
                     optimizer.zero_grad()
-                    outputs = model(inputs.type(torch.cuda.FloatTensor))
+                    if args.flops:
+                        outputs = model(inputs.type(torch.float64))
+                    else:
+                        outputs = model(inputs.type(torch.cuda.FloatTensor))
                     loss = criterion(outputs, targets)
                     loss.backward()
                     optimizer.step()
@@ -169,6 +179,8 @@ if __name__ == '__main__':
                         val_logits = []
                         for i in range(0, x_val.shape[0], 100):
                             x_val_batch = torch.from_numpy(x_val[i:i+100]).to(device)
+                            if args.flops:
+                                x_val_batch = x_val_batch.type(torch.float64)
                             batch_logit = model(x_val_batch)
                             val_logits.append(batch_logit.cpu().numpy())
                         val_logits = np.concatenate(val_logits)
@@ -183,6 +195,12 @@ if __name__ == '__main__':
                     state = dict(model=model.state_dict(), best_val_acc=-1, epoch=epoch)
                     torch.save(state, ckpt_path)
                     print('saved to ' + ckpt_path)
+
+            if args.flops:
+                train_gflops = high.stop_counters()[0] / 1e9
+                all_train_gflops.append(train_gflops)
+                print('train gflops: {}'.format(train_gflops))
+                continue
             # test
             model.eval()
             with torch.no_grad():
@@ -220,15 +238,24 @@ if __name__ == '__main__':
                 all_preds.append(y_pred)
               
 
-    accs = np.array(accs).reshape(-1, num_repeats)
-    preds = np.stack(all_preds, axis=0)
-    preds = preds.reshape([preds.shape[0] // num_repeats, num_repeats, preds.shape[1]])
+        if args.flops:
+            results_dir = 'results/gflops/{}/'.format(args.dataset)
+            Path(results_dir).mkdir(parents=True, exist_ok=True)
+            result_file = os.path.join(results_dir, 'nn_aug'+str(AUG_N)+'_{}.hdf5'.format(args.model))
+            with h5py.File(result_file, 'w') as f:
+                f.create_dataset('train_gflops', data=np.array(all_train_gflops))
+            print('saved to ' + result_file)
 
-    results_dir = 'results/final/{}/'.format(args.dataset)
-    Path(results_dir).mkdir(parents=True, exist_ok=True)
-    result_file = os.path.join(results_dir, 'nn_aug'+str(AUG_N)+'_{}.hdf5'.format(args.model))
-    with h5py.File(result_file, 'w') as f:
-        f.create_dataset('accs', data=accs)
-        f.create_dataset('preds', data=preds)
-        f.create_dataset('y_test', data=y_test)
-    print('saved to ' + result_file)
+    if not args.flops:
+        accs = np.array(accs).reshape(-1, num_repeats)
+        preds = np.stack(all_preds, axis=0)
+        preds = preds.reshape([preds.shape[0] // num_repeats, num_repeats, preds.shape[1]])
+
+        results_dir = 'results/final/{}/'.format(args.dataset)
+        Path(results_dir).mkdir(parents=True, exist_ok=True)
+        result_file = os.path.join(results_dir, 'nn_aug'+str(AUG_N)+'_{}.hdf5'.format(args.model))
+        with h5py.File(result_file, 'w') as f:
+            f.create_dataset('accs', data=accs)
+            f.create_dataset('preds', data=preds)
+            f.create_dataset('y_test', data=y_test)
+        print('saved to ' + result_file)
