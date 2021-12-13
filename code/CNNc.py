@@ -20,6 +20,7 @@ from PIL import Image
 from utils import *
 from model import MNISTNet
 from sklearn.metrics import accuracy_score
+from datetime import datetime
 # from cifar_models import resnet18
 
 
@@ -31,6 +32,7 @@ parser.add_argument('--model', default='shallowcnn', type=str, choices=['vgg11',
 parser.add_argument('--plot', action='store_true')
 parser.add_argument('--naug', default=1, type=int)
 parser.add_argument('--flops', action='store_true')
+parser.add_argument('--start_samples_exp', default=0, type=int)
 args = parser.parse_args()
 
 #if args.dataset == 'MNIST':
@@ -73,26 +75,26 @@ if __name__ == '__main__':
     if args.flops:
         model = model.double()
         model.eval()
-        with torch.no_grad():
-            high.start_counters([events.PAPI_DP_OPS,])
-            x_test_batch = torch.rand(1, 3, img_size, img_size, dtype=torch.float64)
-            test_logit = model(x_test_batch)
-            test_gflops = high.stop_counters()[0] / 1e9
-            print('test gflops: {}'.format(test_gflops))
-        model.train()
+        # with torch.no_grad():
+        #     high.start_counters([events.PAPI_DP_OPS,])
+        #     x_test_batch = torch.rand(1, 3, img_size, img_size, dtype=torch.float64)
+        #     test_logit = model(x_test_batch)
+        #     test_gflops = high.stop_counters()[0] / 1e9
+        #     print('test gflops: {}'.format(test_gflops))
+        # model.train()
 
     accs = []
     all_preds = []
     
     all_train_gflops = []
     AUG_N = args.naug
-    for n_samples_perclass in [2**i for i in range(0, po_train_max+1)]:
-    # for n_samples_perclass in [512]:
+    for n_samples_perclass in [2**i for i in range(args.start_samples_exp, po_train_max+1)]:
         for repeat in range(num_repeats):
             model.load_state_dict(torch.load(model_init_path))
             (x_train_sub_beforeAug, y_train_sub_beforeAug), (x_valbeforePad, y_valbeforePad) = take_train_val_samples(x_train, y_train, n_samples_perclass, num_classes, repeat)
             
             if args.flops:
+                x_train_sub_beforeAug = x_train_sub_beforeAug.astype(np.float64)
                 high.start_counters([events.PAPI_DP_OPS,])
 
             x_train_sub_beforeAugReshape = rearrange(x_train_sub_beforeAug, 'b c w h -> b w h c') 
@@ -118,8 +120,7 @@ if __name__ == '__main__':
                 x_val_PadReshape = rearrange(np.asarray(x_val_Pad), 'b w h c -> b c w h') 
                 x_val = x_val_PadReshape.copy()
                 y_val = y_valbeforePad.copy()
-            
-            
+
             x_val_shape = 0 if x_val is None else x_val.shape
             print('============== perclass samples {} repeat {} x_train_sub.shape {} x_val.shape {} ============'.format(n_samples_perclass, repeat, x_train_sub.shape, x_val_shape))
 
@@ -159,7 +160,9 @@ if __name__ == '__main__':
 
                     optimizer.zero_grad()
                     if args.flops:
-                        outputs = model(inputs.type(torch.float64))
+                        assert inputs.dtype == torch.float64
+                        # outputs = model(inputs.type(torch.float64))
+                        outputs = model(inputs)
                     else:
                         outputs = model(inputs.type(torch.cuda.FloatTensor))
                     loss = criterion(outputs, targets)
@@ -170,7 +173,9 @@ if __name__ == '__main__':
 
                     train_acc = (max_indices == targets).type(torch.float).mean()
                     if (i//args.batch_size) % 10 == 0:
-                        print('epoch {} iter {} train loss {:.5f} acc {:.5f}'.format(epoch, i//args.batch_size, loss.item(), train_acc))
+                        now = datetime.now()
+                        dt_string = now.strftime("%d/%m/%Y %H:%M:%S")
+                        print('{} epoch {} iter {} train loss {:.5f} acc {:.5f}'.format(dt_string, epoch, i//args.batch_size, loss.item(), train_acc))
 
                 # validation
                 if x_val is not None:
@@ -195,6 +200,8 @@ if __name__ == '__main__':
                     state = dict(model=model.state_dict(), best_val_acc=-1, epoch=epoch)
                     torch.save(state, ckpt_path)
                     print('saved to ' + ckpt_path)
+                # if train_acc > 0.99:
+                #     break
 
             if args.flops:
                 train_gflops = high.stop_counters()[0] / 1e9
