@@ -14,7 +14,7 @@ import sys
 sys.path.append('path/to/pytranskit')
 ```
 
-### Location to the datasets:
+<!-- ### Location to the datasets:
 1. sammas/g_bme-RohdeLab/Shifat/P6_Polynomials/codeP/data/MNIST
 2. sammas/g_bme-RohdeLab/Shifat/P6_Polynomials/codeP/data/AFFNISTb
 3. sammas/g_bme-RohdeLab/Shifat/P6_Polynomials/codeP/data/OMNIGLOT
@@ -24,4 +24,4 @@ sys.path.append('path/to/pytranskit')
 
 Instructions:
 1. Create a folder named "data" at the same level as the folder "code"
-2. Copy the dataset folders above inside this folder "data"
+2. Copy the dataset folders above inside this folder "data" -->
